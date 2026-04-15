@@ -123,8 +123,8 @@ def parse_tasks(raw: str) -> List[str]:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model",      default="Qwen/Qwen3.5-9B",
-                        help="HuggingFace model ID (default: Qwen/Qwen3.5-9B)")
+    parser.add_argument("--model",      default="Qwen/Qwen2.5-7B-Instruct",
+                        help="HuggingFace model ID (default: Qwen/Qwen2.5-7B-Instruct)")
     parser.add_argument("--subfield",   default=None)
     parser.add_argument("--in-dir",     default="abstracts")
     parser.add_argument("--out-dir",    default="extracted")
@@ -167,21 +167,39 @@ def main():
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    quant_config = None
-    if args.quantize == "4bit":
-        quant_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.float16,
-        )
-    elif args.quantize == "8bit":
-        quant_config = BitsAndBytesConfig(load_in_8bit=True)
+    # Detect MPS (Apple Silicon)
+    use_mps = (args.device in ("mps", "auto") and
+               torch.backends.mps.is_available() and
+               args.device != "cpu")
+    if args.device == "auto" and use_mps:
+        print("  Detected Apple MPS backend.")
 
-    model = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.float16 if args.device != "cpu" else torch.float32,
-        device_map=args.device,
-        quantization_config=quant_config,
-    )
+    quant_config = None
+    if args.quantize in ("4bit", "8bit"):
+        if use_mps:
+            print("  ⚠ bitsandbytes quantization is not supported on MPS — ignoring --quantize.")
+        else:
+            if args.quantize == "4bit":
+                quant_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                )
+            elif args.quantize == "8bit":
+                quant_config = BitsAndBytesConfig(load_in_8bit=True)
+
+    if use_mps:
+        # device_map="auto" doesn't work well with MPS; load on CPU then move
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=torch.float16,
+        ).to("mps")
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model,
+            torch_dtype=torch.float16 if args.device != "cpu" else torch.float32,
+            device_map=args.device if args.device != "mps" else None,
+            quantization_config=quant_config,
+        )
     model.eval()
     print("  Model loaded.\n")
 
@@ -234,13 +252,14 @@ def main():
                     for r in batch
                 ]
 
+                device = next(model.parameters()).device
                 inputs_enc = tokenizer(
                     prompts,
                     return_tensors="pt",
                     padding=True,
                     truncation=True,
                     max_length=1024,
-                ).to(model.device)
+                ).to(device)
 
                 with torch.no_grad():
                     outputs = model.generate(
