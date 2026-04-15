@@ -1,0 +1,58 @@
+{
+  "Working Memory": {
+    "TOTAL": 47660,
+    "UNION": 6138,
+    "N-back": 2476,
+    "Digit span": 1561,
+    "Complex span": 651,
+    "Change detection": 589,
+    "Corsi / spatial span": 605,
+    "Delayed match-to-sample": 306,
+    "Sternberg task": 166,
+    "Serial recall": 221,
+    "Running span": 26
+  },
+  "Decision Making": {
+    "TOTAL": 276185,
+    "UNION": 4370,
+    "Iowa Gambling Task": 1222,
+    "Go/No-Go": 695,
+    "Delay discounting": 825,
+    "Stop signal": 146,
+    "2AFC / dot motion": 373,
+    "Ultimatum game": 345,
+    "Multi-armed bandit": 151,
+    "Reversal learning": 300,
+    "Trust game": 135,
+    "Dictator game": 163,
+    "BART": 360,
+    "Cambridge Gambling Task": 96
+  },
+  "Spatial Navigation": {
+    "TOTAL": 2813,
+    "UNION": 11596,
+    "Morris water maze": 7431,
+    "Radial arm maze": 734,
+    "T-maze": 950,
+    "Barnes maze": 672,
+    "Y-maze": 1467,
+    "Virtual navigation": 268,
+    "Open field": 1663,
+    "Path integration": 725,
+    "Sea Hero Quest": 19
+  },
+  "Attention": {
+    "TOTAL": 57509,
+    "UNION": 10890,
+    "Stroop": 3001,
+    "Visual search": 3455,
+    "Flanker (Eriksen)": 1118,
+    "Oddball (P300)": 1405,
+    "CPT": 1787,
+    "Posner cueing": 1030,
+    "Attentional blink": 819,
+    "Binocular rivalry": 151,
+    "Inhibition of return": 559,
+    "Multiple object tracking": 274
+  }
+}
