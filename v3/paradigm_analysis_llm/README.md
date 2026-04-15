@@ -56,8 +56,44 @@ Options:
 
 ## Step 2 — Extract task names with LLM
 
-Runs a local Qwen instruct model on every abstract to extract
-named experimental tasks.
+Two backends are supported: **vLLM** (recommended for multi-GPU servers) and
+**transformers** (single GPU or CPU).
+
+### Backend A: vLLM (multi-GPU server, recommended)
+
+Install vLLM and start the server in one terminal:
+
+```bash
+pip install vllm
+
+vllm serve Qwen/Qwen3.5-27B-FP8 \
+    --port 8000 \
+    --tensor-parallel-size 8 \
+    --max-model-len 262144 \
+    --reasoning-parser qwen3
+```
+
+Wait until `Application startup complete` appears, then run the extraction
+in a second terminal:
+
+```bash
+python 2_extract_tasks_llm.py \
+    --model Qwen/Qwen3.5-27B-FP8 \
+    --vllm-url http://localhost:8000 \
+    --workers 64
+```
+
+`--workers` controls concurrent requests to the server (default: 64). Increase
+it if GPU utilization is low; the server handles all batching internally.
+
+**GPU requirements for Qwen3.5-27B-FP8:**
+| GPUs | VRAM total | Notes |
+|---|---|---|
+| 2× A5000 | 48 GB | fits comfortably |
+| 4× A5000 | 96 GB | headroom for larger context |
+| 8× A5000 | 192 GB | maximum throughput |
+
+### Backend B: transformers (single GPU / CPU)
 
 ```bash
 # Default model (Qwen2.5-7B-Instruct, ~15GB VRAM)
@@ -66,14 +102,11 @@ python 2_extract_tasks_llm.py
 # Qwen3-8B
 python 2_extract_tasks_llm.py --model Qwen/Qwen3-8B
 
-# Qwen3.5-27B-FP8
-python 2_extract_tasks_llm.py --model Qwen/Qwen3.5-27B-FP8
-
-# Qwen3.5-9B
-python 2_extract_tasks_llm.py --model Qwen/Qwen3.5-9B
-
-# With 4-bit quantization (~6GB VRAM)
+# With 4-bit quantization (~6GB VRAM, requires bitsandbytes)
 python 2_extract_tasks_llm.py --quantize 4bit
+
+# Apple Silicon (MPS)
+python 2_extract_tasks_llm.py --model Qwen/Qwen2.5-7B-Instruct --device mps --batch-size 4
 
 # CPU-only (slow but works)
 python 2_extract_tasks_llm.py --device cpu --batch-size 1
@@ -85,6 +118,10 @@ python 2_extract_tasks_llm.py --device cpu --batch-size 1
 | Qwen/Qwen2.5-7B-Instruct | ~15 GB | ~5 GB | ~80 rec/s |
 | Qwen/Qwen3-8B | ~16 GB | ~5 GB | ~75 rec/s |
 | Qwen/Qwen2.5-14B-Instruct | ~28 GB | ~9 GB | ~45 rec/s |
+
+> **Note:** The FP8 variant (`Qwen3.5-27B-FP8`) requires vLLM for correct
+> inference. Loading it with plain transformers will silently ignore the FP8
+> scale factors and produce incorrect outputs.
 
 Output: `extracted/<subfield>.jsonl`
 Each line: `{"pmid": "...", "subfield": "...", "tasks": ["n-back task", ...]}`
