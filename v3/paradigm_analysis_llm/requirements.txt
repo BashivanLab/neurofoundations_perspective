@@ -1,0 +1,12 @@
+# Core (always needed)
+matplotlib>=3.5
+numpy>=1.21
+scipy>=1.7          # for Spearman r in scatter plot
+
+# LLM inference (step 2)
+torch>=2.0
+transformers>=4.40
+accelerate>=0.26    # required for device_map="auto"
+
+# Optional: 4-bit / 8-bit quantization (reduces GPU memory ~50–75%)
+# bitsandbytes>=0.41
