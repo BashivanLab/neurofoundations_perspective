@@ -129,7 +129,7 @@ Resumable: re-running skips already-processed PMIDs.
 
 ## Step 3 — Aggregate task names
 
-Counts task frequencies, merges surface variants, builds PubMed queries.
+Counts task frequencies, merges surface variants, removes generic working memory task names, builds PubMed queries.
 
 ```bash
 python 3_aggregate_tasks.py --min-count 3

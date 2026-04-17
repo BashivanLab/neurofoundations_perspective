@@ -1,13 +1,15 @@
 """
 5_plot_results.py
 -----------------
-Generates publication-ready figures from pubmed_counts.json.
-Identical in spirit to the plot_results.py in paradigm_analysis/ but
-also overlays the LLM mention frequencies alongside PubMed counts.
+Generates publication-ready figures from task_frequencies.json
+(LLM mention counts + TOTAL/UNION computed locally from downloaded abstracts).
+
+No PubMed re-querying is needed. All counts come from the local pipeline.
 
 Input:
-    pubmed_counts.json        (from 4_fetch_task_counts.py)
-    task_frequencies.json     (from 3_aggregate_tasks.py)   [optional]
+    task_frequencies.json     (from 3_aggregate_tasks.py)  ← primary
+    pubmed_counts.json        (from 4_fetch_task_counts.py) ← optional,
+                                enables figure 08 (LLM rank vs PubMed rank)
 
 Output figures (in figures/ by default):
     00_coverage.png
@@ -15,11 +17,12 @@ Output figures (in figures/ by default):
     02_lorenz_curves.png
     03_cumulative_concentration.png
     04_working_memory.png  …  07_attention.png
-    08_llm_vs_pubmed.png      (scatter: LLM mention rank vs PubMed count rank)
+    08_llm_vs_pubmed.png      (scatter: LLM rank vs PubMed rank — optional)
 
 Usage:
     python 5_plot_results.py
-    python 5_plot_results.py --data pubmed_counts.json --llm task_frequencies.json
+    python 5_plot_results.py --data task_frequencies.json
+    python 5_plot_results.py --pubmed pubmed_counts.json   # enables figure 08
     python 5_plot_results.py --fmt pdf --dpi 300
 """
 
@@ -137,7 +140,7 @@ def plot_subfield(counts, title, path, color, union):
                                   gridspec_kw={"width_ratios":[2,1]})
     bars = ab.barh(range(n), vals, color=bar_colors, edgecolor="white", linewidth=0.5)
     ab.set_yticks(range(n)); ab.set_yticklabels(names, fontsize=10)
-    ab.set_xlabel("PubMed publications [tiab]")
+    ab.set_xlabel("LLM mention count (abstracts)")
     ab.set_title(f"{title}\n(denominator = UNION = {union:,} papers naming any task)",
                  fontsize=13, fontweight="bold")
     for bar, v in zip(bars, vals):
@@ -263,12 +266,14 @@ def plot_llm_vs_pubmed(data, llm_freqs, subfields, path):
 def main():
     global _DPI
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data",  default="pubmed_counts.json")
-    parser.add_argument("--llm",   default="task_frequencies.json",
-                        help="LLM mention frequencies (optional, enables scatter plot)")
-    parser.add_argument("--out",   default="figures")
-    parser.add_argument("--fmt",   default="png", choices=["png","pdf","svg"])
-    parser.add_argument("--dpi",   type=int, default=200)
+    parser.add_argument("--data",   default="task_frequencies.json",
+                        help="Primary data file (task_frequencies.json from step 3)")
+    parser.add_argument("--pubmed", default=None,
+                        help="Optional: pubmed_counts.json from step 4 — enables "
+                             "figure 08 (LLM rank vs PubMed rank validation)")
+    parser.add_argument("--out",    default="figures")
+    parser.add_argument("--fmt",    default="png", choices=["png","pdf","svg"])
+    parser.add_argument("--dpi",    type=int, default=200)
     args = parser.parse_args()
 
     _DPI = args.dpi
@@ -278,10 +283,11 @@ def main():
 
     totals, unions, data = {}, {}, {}
     for sf, counts in raw.items():
-        totals[sf] = counts.get("TOTAL") or 0
-        unions[sf] = counts.get("UNION") or 0
-        data[sf]   = {k:v for k,v in counts.items()
-                      if k not in ("TOTAL","UNION") and v is not None}
+        totals[sf] = counts.get("_TOTAL") or counts.get("TOTAL") or 0
+        unions[sf] = counts.get("_UNION") or counts.get("UNION") or 0
+        data[sf]   = {k: v for k, v in counts.items()
+                      if not k.startswith("_") and k not in ("TOTAL", "UNION")
+                      and v is not None}
 
     subfields = list(data.keys())
     stats = {sf: subfield_stats(data[sf], unions[sf]) for sf in subfields}
@@ -292,7 +298,7 @@ def main():
 
     # Console summary
     print("\n" + "="*70)
-    print("TASK CONCENTRATION — SUMMARY (LLM-discovered tasks, PubMed counts)")
+    print("TASK CONCENTRATION — SUMMARY (LLM-discovered tasks, local counts)")
     print("="*70)
     for sf in subfields:
         s = stats.get(sf, {})
@@ -300,8 +306,8 @@ def main():
         cov = unions[sf]/totals[sf]*100 if totals[sf] else 0
         fb  = "  ⚠ UNION fallback" if s.get("union_fallback") else ""
         print(f"\n{sf}")
-        print(f"  TOTAL (empirical filter)   : {totals[sf]:>10,}")
-        print(f"  UNION (named-task studies) : {unions[sf]:>10,}  ({cov:.1f}% coverage){fb}")
+        print(f"  TOTAL (downloaded abstracts)  : {totals[sf]:>10,}")
+        print(f"  UNION (named a task, by LLM)  : {unions[sf]:>10,}  ({cov:.1f}% coverage){fb}")
         print(f"  Top task    : {s['top1_label']}  ({s['top1_pct']:.1f}%)")
         print(f"  Top-3 share : {s['top3_pct']:.1f}%")
         print(f"  Gini        : {s['gini']:.3f}   HHI: {s['hhi_norm']:.4f}")
@@ -323,14 +329,22 @@ def main():
     plot_lorenz(data, valid, f("02_lorenz_curves"))
     plot_cumulative(data, unions, valid, f("03_cumulative_concentration"))
 
-    # LLM vs PubMed scatter (optional)
-    llm_path = Path(args.llm)
-    if llm_path.exists():
+    # LLM vs PubMed scatter — only if pubmed_counts.json is provided (step 4)
+    pubmed_path = Path(args.pubmed) if args.pubmed else Path("pubmed_counts.json")
+    if args.pubmed or pubmed_path.exists():
         try:
-            llm_freqs = json.loads(llm_path.read_text())
-            plot_llm_vs_pubmed(data, llm_freqs, valid, f("08_llm_vs_pubmed"))
+            pubmed_raw   = json.loads(pubmed_path.read_text())
+            pubmed_counts = {
+                sf: {k: v for k, v in counts.items()
+                     if not k.startswith("_") and k not in ("TOTAL","UNION")
+                     and v is not None}
+                for sf, counts in pubmed_raw.items()
+            }
+            plot_llm_vs_pubmed(pubmed_counts, data, valid, f("08_llm_vs_pubmed"))
         except Exception as e:
-            print(f"  (skipping LLM scatter: {e})")
+            print(f"  (skipping LLM vs PubMed scatter: {e})")
+    else:
+        print("  (skipping figure 08 — run step 4 and pass --pubmed pubmed_counts.json to enable)")
 
     print(f"\n✓ Figures saved to {out_dir.resolve()}/")
 

@@ -4,13 +4,22 @@
 Reads LLM extraction results and builds:
   1. A ranked frequency table of all discovered task names per subfield
   2. A normalisation map merging surface variants (edit-distance clustering)
-  3. A queries.json file that can be fed directly into 4_fetch_task_counts.py
+  3. TOTAL and UNION counts derived from local JSONL files (no PubMed needed)
+  4. A queries.json file that can be fed into 4_fetch_task_counts.py (optional)
 
-Input:   extracted/<subfield>.jsonl  (from 2_extract_tasks_llm.py)
+TOTAL = number of records in abstracts/<subfield>.jsonl
+        (all empirical papers downloaded in step 1)
+UNION = number of extracted records where the LLM found at least one task
+        (papers naming any tracked paradigm)
+
+Input:
+    extracted/<subfield>.jsonl   (from 2_extract_tasks_llm.py)
+    abstracts/<subfield>.jsonl   (from 1_download_abstracts.py)  ← for TOTAL
+
 Output:
-    task_frequencies.json   — {subfield: {task_name: count, ...}}
+    task_frequencies.json   — {subfield: {"_TOTAL": N, "_UNION": N, task: count, ...}}
     task_queries.json       — {subfield: {task_name: 'pubmed query', ...}}
-    task_frequencies.csv    — human-readable spreadsheet
+    task_frequencies.csv    — human-readable spreadsheet (excludes _TOTAL/_UNION rows)
 
 Usage:
     python 3_aggregate_tasks.py
@@ -209,20 +218,36 @@ SUBFIELD_ANCHORS = {
 # Main
 # ---------------------------------------------------------------------------
 
+def count_total(abstracts_dir: Path, sf_slug: str) -> int:
+    """Count records in abstracts/<subfield>.jsonl (= TOTAL empirical papers)."""
+    abs_file = abstracts_dir / f"{sf_slug}.jsonl"
+    if not abs_file.exists():
+        return 0
+    n = 0
+    with abs_file.open() as f:
+        for line in f:
+            if line.strip():
+                n += 1
+    return n
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--in-dir",     default="extracted")
-    parser.add_argument("--out-dir",    default=".")
-    parser.add_argument("--min-count",  type=int, default=2,
+    parser.add_argument("--in-dir",        default="extracted")
+    parser.add_argument("--abstracts-dir", default="abstracts",
+                        help="Directory with downloaded abstracts (for TOTAL count)")
+    parser.add_argument("--out-dir",       default=".")
+    parser.add_argument("--min-count",     type=int, default=2,
                         help="Ignore tasks mentioned fewer than N times (default: 2)")
-    parser.add_argument("--top",        type=int, default=0,
+    parser.add_argument("--top",           type=int, default=0,
                         help="Keep only top-N tasks per subfield (0 = keep all)")
-    parser.add_argument("--no-cluster", action="store_true",
+    parser.add_argument("--no-cluster",    action="store_true",
                         help="Skip fuzzy edit-distance clustering")
     args = parser.parse_args()
 
-    in_dir  = Path(args.in_dir)
-    out_dir = Path(args.out_dir)
+    in_dir       = Path(args.in_dir)
+    abstracts_dir = Path(args.abstracts_dir)
+    out_dir      = Path(args.out_dir)
     out_dir.mkdir(exist_ok=True)
 
     all_freqs   = {}
@@ -253,9 +278,16 @@ def main():
                         continue
                     raw_counter[norm] += 1
 
+        # TOTAL: all empirical papers downloaded in step 1
+        total = count_total(abstracts_dir, sf_slug)
+        if total == 0:
+            total = n_records   # fallback: use extracted record count
+            print(f"\n  ⚠ abstracts/{sf_slug}.jsonl not found — using extracted count as TOTAL")
+
         print(f"\n{sf_name}")
-        print(f"  Records: {n_records:,}  |  with named task: {n_with_task:,}  "
-              f"({n_with_task/max(n_records,1)*100:.1f}%)")
+        print(f"  TOTAL (downloaded abstracts) : {total:,}")
+        print(f"  UNION (LLM found a task)     : {n_with_task:,}  "
+              f"({n_with_task/max(total,1)*100:.1f}% coverage)")
         print(f"  Unique task names (raw): {len(raw_counter):,}")
 
         # Fuzzy cluster
@@ -282,15 +314,16 @@ def main():
         if len(counter) > 20:
             print(f"  … ({len(counter) - 20} more)")
 
-        all_freqs[sf_name] = dict(counter.most_common())
+        # Store _TOTAL and _UNION as special keys alongside task counts
+        all_freqs[sf_name] = {"_TOTAL": total, "_UNION": n_with_task}
+        all_freqs[sf_name].update(counter.most_common())
 
-        # Build PubMed queries for each task
+        # Build PubMed queries for each task (used by optional step 4)
         anchor = SUBFIELD_ANCHORS.get(sf_name, sf_name.lower())
         all_queries[sf_name] = {
             task: make_pubmed_query(task, anchor)
             for task in counter
         }
-        # Add TOTAL and UNION placeholders (to be filled by 4_fetch_task_counts.py)
         all_queries[sf_name]["_TOTAL"] = f'"{anchor}"[tiab]'
 
     # Save outputs
@@ -301,18 +334,24 @@ def main():
     freqs_path.write_text(json.dumps(all_freqs, indent=2))
     queries_path.write_text(json.dumps(all_queries, indent=2))
 
-    # CSV output
+    # CSV output — skip _TOTAL / _UNION metadata rows
     with csv_path.open("w", newline="") as f:
         writer = csv.writer(f)
         writer.writerow(["subfield", "rank", "task_name", "llm_mention_count"])
         for sf, tasks in all_freqs.items():
-            for rank, (task, count) in enumerate(tasks.items(), 1):
+            rank = 1
+            for task, count in tasks.items():
+                if task.startswith("_"):
+                    continue
                 writer.writerow([sf, rank, task, count])
+                rank += 1
 
     print(f"\n✓ task_frequencies.json  → {freqs_path}")
     print(f"✓ task_queries.json      → {queries_path}")
     print(f"✓ task_frequencies.csv   → {csv_path}")
-    print(f"\nNext step: python 4_fetch_task_counts.py")
+    print(f"\nNext step: python 5_plot_results.py")
+    print(f"  (Step 4 / 4_fetch_task_counts.py is now optional —")
+    print(f"   only needed if you want PubMed count validation in figure 08)")
 
 
 if __name__ == "__main__":
