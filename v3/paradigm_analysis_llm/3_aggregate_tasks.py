@@ -189,6 +189,13 @@ def make_pubmed_query(task_name: str, subfield_anchor: str) -> str:
     return f"{quoted} AND {anchor}"
 
 
+# Regex patterns for generic task names to drop per subfield.
+# Tasks whose normalised names match these patterns are excluded before counting.
+GENERIC_TASK_PATTERNS: dict[str, re.Pattern] = {
+    "Working Memory": re.compile(r"\bworking memory\b", re.IGNORECASE),
+}
+
+
 # Subfield anchor words for building queries
 SUBFIELD_ANCHORS = {
     "Working Memory":    "working memory",
@@ -239,8 +246,12 @@ def main():
                 tasks = rec.get("tasks", [])
                 if tasks:
                     n_with_task += 1
+                generic_pat = GENERIC_TASK_PATTERNS.get(sf_name)
                 for t in tasks:
-                    raw_counter[canonical(t)] += 1
+                    norm = canonical(t)
+                    if generic_pat and generic_pat.search(norm):
+                        continue
+                    raw_counter[norm] += 1
 
         print(f"\n{sf_name}")
         print(f"  Records: {n_records:,}  |  with named task: {n_with_task:,}  "
