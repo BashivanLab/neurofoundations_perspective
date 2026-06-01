@@ -66,10 +66,10 @@ Install vLLM and start the server in one terminal:
 ```bash
 pip install vllm
 
-vllm serve Qwen/Qwen3.5-27B-FP8 \
+CUDA_VISIBLE_DEVICES=1,2,3,4 vllm serve Qwen/Qwen3.5-9B \
     --port 8000 \
-    --tensor-parallel-size 8 \
-    --max-model-len 262144 \
+    --tensor-parallel-size 4 \
+    --max-model-len 5000 \
     --reasoning-parser qwen3
 ```
 
@@ -77,8 +77,8 @@ Wait until `Application startup complete` appears, then run the extraction
 in a second terminal:
 
 ```bash
-python 2_extract_tasks_llm.py \
-    --model Qwen/Qwen3.5-27B-FP8 \
+CUDA_VISIBLE_DEVICES=1,2,3,4 python 2_extract_tasks_llm.py \
+    --model Qwen/Qwen3.5-9B \
     --vllm-url http://localhost:8000 \
     --workers 64
 ```
