@@ -59,7 +59,7 @@ SYSTEM_PROMPT = """You are a neuroscience expert. Your task is to extract the na
 
 Rules:
 - Extract ONLY named experimental tasks/paradigms actually used in the study (e.g., "n-back task", "Morris water maze", "Iowa Gambling Task").
-- Do NOT extract generic descriptions like "cognitive task", "behavioral task", or "memory test" unless a specific name is given.
+- Do NOT extract generic descriptions like "cognitive task", "behavioral task", "working memory task", or "memory test" unless a specific name is given.
 - Do NOT extract outcome measures, brain regions, or statistical methods.
 - If multiple tasks are mentioned, list all of them.
 - If no specific named task is mentioned, return an empty list.
