@@ -174,8 +174,9 @@ def plot_subfield(counts, title, path, color, union,top_n=5):
         ab.text(bar.get_width()+max(vals)*0.01, bar.get_y()+bar.get_height()/2,
                 f"{v:,}  ({pct:.1f}%)", va="center", fontsize=9)
     ab.set_xlim(0, max(vals)*1.40)
-    # Pie: top-N tasks + rest; legend includes only top-N tasks.
+    # Pie: top-N tasks + rest; legend includes top-N tasks + "Other (N tasks)".
     rest = max(union - sum(v for _, v in top_items), 0)
+    n_remaining = len(ranked) - top_n
 
     sizes = [v for _, v in top_items] + ([rest] if rest > 0 else [])
     alphas = np.linspace(1.0, 0.35, num=len(top_items)) if top_items else []
@@ -194,9 +195,14 @@ def plot_subfield(counts, title, path, color, union,top_n=5):
         at.set_fontweight("bold")
 
     if top_items:
+        legend_handles = list(wedges[:len(top_items)])
+        legend_labels  = [f"{k} ({v:,})" for k, v in top_items]
+        if rest > 0 and n_remaining > 0:
+            legend_handles.append(wedges[len(top_items)])
+            legend_labels.append(f"Other ({n_remaining} task types, {rest:,} papers)")
         ap.legend(
-            wedges[:len(top_items)],
-            [k for k, _ in top_items],
+            legend_handles,
+            legend_labels,
             title=f"Top {top_n} tasks",
             loc="center left",
             bbox_to_anchor=(1.02, 0.5),
