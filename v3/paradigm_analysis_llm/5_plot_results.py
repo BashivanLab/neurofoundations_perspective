@@ -30,18 +30,41 @@ import argparse
 import json
 from pathlib import Path
 
-import matplotlib
+import matplotlib as mpl
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 
-matplotlib.rcParams.update({
-    "font.family":       "sans-serif",
-    "axes.spines.top":   False,
-    "axes.spines.right": False,
-    "figure.facecolor":  "white",
-    "axes.facecolor":    "white",
+mpl.rcParams.update({
+    'figure.dpi': 160,
+    'savefig.dpi': 400,
+    'figure.facecolor': 'white',
+    'axes.facecolor': 'white',
+    'font.family': 'Liberation Sans',
+    'font.size': 20,
+    'axes.titlesize': 17,
+    'axes.labelsize': 20,
+    'axes.labelweight': 'regular',
+    'axes.linewidth': 0.9,
+    'axes.titlepad': 10,
+    'xtick.labelsize': 18,
+    'ytick.labelsize': 18,
+    'xtick.major.size': 3.5,
+    'ytick.major.size': 3.5,
+    'xtick.major.width': 0.9,
+    'ytick.major.width': 0.9,
+    'legend.fontsize': 16,
+    'legend.frameon': False,
+    'pdf.fonttype': 42,
+    'ps.fonttype': 42,
 })
+
+CLASS_COLORS = {
+    'Exo-X-simulation': '#0072B2',
+    'Exo-X-public': '#009E73',
+    'Exo-N/Endo-X': '#D55E00',
+    'Endo-N': '#CC79A7',
+}
 
 SUBFIELD_COLORS = {
     "Working Memory":    "#2196F3",
@@ -50,7 +73,7 @@ SUBFIELD_COLORS = {
     "Attention":         "#9C27B0",
 }
 
-_DPI = 200
+_DPI = None
 
 
 # ---------------------------------------------------------------------------
@@ -115,14 +138,14 @@ def plot_coverage(subfields, totals, unions, path):
     a1.bar(x, unnamed, bottom=named, color="#ddd", alpha=0.8, label="Other / unnamed")
     a1.set_xticks(x); a1.set_xticklabels(subfields, fontsize=11)
     a1.set_ylabel("PubMed publications"); a1.legend(fontsize=10)
-    a1.set_title("How many subfield studies name\na tracked task?", fontsize=13, fontweight="bold")
+    # a1.set_title("How many subfield studies name\na tracked task?", fontsize=13, fontweight="bold")
     for bar, n, u in zip(b1, named, unnamed):
         a1.text(bar.get_x()+bar.get_width()/2, n/2, f"{n:,}",
                 ha="center", va="center", fontsize=9, color="white", fontweight="bold")
     pcts = [unions[s]/totals[s]*100 if totals[s] else 0 for s in subfields]
     bars = a2.bar(subfields, pcts, color=colors, alpha=0.85)
     a2.set_ylabel("Coverage (%)"); a2.set_ylim(0, max(pcts)*1.35)
-    a2.set_title("Named-task studies as\n% of empirical subfield total", fontsize=13, fontweight="bold")
+    # a2.set_title("Named-task studies as\n% of empirical subfield total", fontsize=13, fontweight="bold")
     for b, p in zip(bars, pcts):
         a2.text(b.get_x()+b.get_width()/2, b.get_height()+max(pcts)*0.02,
                 f"{p:.1f}%", ha="center", fontsize=12, fontweight="bold")
@@ -130,8 +153,11 @@ def plot_coverage(subfields, totals, unions, path):
     print(f"  Saved: {path}")
 
 
-def plot_subfield(counts, title, path, color, union):
-    items = sorted(counts.items(), key=lambda x: x[1])
+def plot_subfield(counts, title, path, color, union,top_n=5):
+    # Keep bar and pie aligned on the same top-n task set.
+    ranked = sorted(counts.items(), key=lambda x: -x[1])
+    top_items = ranked[:top_n]
+    items = sorted(top_items, key=lambda x: x[1])
     names, vals = [i[0] for i in items], [i[1] for i in items]
     n = len(items)
     base = mcolors.to_rgba(color)
@@ -141,23 +167,44 @@ def plot_subfield(counts, title, path, color, union):
     bars = ab.barh(range(n), vals, color=bar_colors, edgecolor="white", linewidth=0.5)
     ab.set_yticks(range(n)); ab.set_yticklabels(names, fontsize=10)
     ab.set_xlabel("LLM mention count (abstracts)")
-    ab.set_title(f"{title}\n(denominator = UNION = {union:,} papers naming any task)",
-                 fontsize=13, fontweight="bold")
+    # ab.set_title(f"{title}\n(denominator = UNION = {union:,} papers naming any task)",
+                #  fontsize=13, fontweight="bold")
     for bar, v in zip(bars, vals):
         pct = v/union*100
         ab.text(bar.get_width()+max(vals)*0.01, bar.get_y()+bar.get_height()/2,
                 f"{v:,}  ({pct:.1f}%)", va="center", fontsize=9)
     ab.set_xlim(0, max(vals)*1.40)
-    # Pie: top-3 vs rest
-    top3  = sorted(counts.items(), key=lambda x:-x[1])[:3]
-    rest  = union - sum(v for _,v in top3)
-    sizes = [v for _,v in top3] + [max(rest,0)]
-    pcolors = [mcolors.to_rgba(color, a) for a in [1.0,0.70,0.45]] + ["#ddd"]
-    _, _, ats = ap.pie(sizes, labels=[k for k,_ in top3]+["All other\ntasks"],
-                       autopct="%1.1f%%", colors=pcolors, startangle=90,
-                       textprops={"fontsize":10})
-    for at in ats: at.set_fontsize(11); at.set_fontweight("bold")
-    ap.set_title("Top-3 task\nconcentration", fontsize=13, fontweight="bold")
+    # Pie: top-N tasks + rest; legend includes only top-N tasks.
+    rest = max(union - sum(v for _, v in top_items), 0)
+
+    sizes = [v for _, v in top_items] + ([rest] if rest > 0 else [])
+    alphas = np.linspace(1.0, 0.35, num=len(top_items)) if top_items else []
+    pcolors = [mcolors.to_rgba(color, float(a)) for a in alphas] + (["#ddd"] if rest > 0 else [])
+
+    wedges, _, ats = ap.pie(
+        sizes,
+        labels=None,
+        autopct="%1.1f%%",
+        colors=pcolors,
+        startangle=90,
+        textprops={"fontsize":10},
+    )
+    for at in ats:
+        at.set_fontsize(11)
+        at.set_fontweight("bold")
+
+    if top_items:
+        ap.legend(
+            wedges[:len(top_items)],
+            [k for k, _ in top_items],
+            title=f"Top {top_n} tasks",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            fontsize=9,
+            title_fontsize=10,
+            frameon=False,
+        )
+    ap.set_title(f"Top-{top_n} task\nconcentration", fontsize=13, fontweight="bold")
     plt.tight_layout(); plt.savefig(path, dpi=_DPI, bbox_inches="tight"); plt.close()
     print(f"  Saved: {path}")
 
@@ -170,9 +217,16 @@ def plot_summary(stats, subfields, path):
     t3 = [stats[s]["top3_pct"] for s in subfields]
     b1 = axes[0].bar(x-w/2, t1, w, color=colors, alpha=0.95, label="Top-1")
     b2 = axes[0].bar(x+w/2, t3, w, color=colors, alpha=0.45, label="Top-3")
-    axes[0].set_xticks(x); axes[0].set_xticklabels(subfields, fontsize=10)
-    axes[0].set_ylabel("% of named-task studies (UNION)"); axes[0].legend(fontsize=10)
-    axes[0].set_title("Task Concentration\n(denominator = UNION)", fontsize=13, fontweight="bold")
+    axes[0].legend(fontsize=10)
+    # axes[0].set_title("Task Concentration\n(denominator = UNION)", fontsize=13, fontweight="bold")
+    axes[0].spines['top'].set_visible(False)
+    axes[0].spines['right'].set_visible(False)
+    axes[0].spines['left'].set_position(('outward', 6))
+    axes[0].spines['bottom'].set_position(('outward', 6))
+    axes[0].set_xticks(x)
+    axes[0].set_xticklabels(subfields, fontsize=10, rotation=20, ha='right')
+    axes[0].set_ylabel("% of named-task studies")
+    axes[0].set_yticks([0, 10, 20, 30, 40])
     for b,v in zip(b1,t1): axes[0].text(b.get_x()+b.get_width()/2, v+.5, f"{v:.1f}%", ha="center", fontsize=9, fontweight="bold")
     for b,v in zip(b2,t3): axes[0].text(b.get_x()+b.get_width()/2, v+.5, f"{v:.1f}%", ha="center", fontsize=9)
     gs = [stats[s]["gini"] for s in subfields]
@@ -199,11 +253,17 @@ def plot_lorenz(data, subfields, path):
         ax.plot(np.arange(n+1)/n, np.insert(np.cumsum(v)/t,0,0), "-o",
                 color=SUBFIELD_COLORS[sf], label=sf, lw=2, ms=4)
     ax.plot([0,1],[0,1],"k--",alpha=0.4,label="Perfect equality")
-    ax.set_xlabel("Cumulative share of task types (sorted by frequency)")
-    ax.set_ylabel("Cumulative share of publications")
-    ax.set_title("Lorenz Curves of Task Usage\nacross Neuroscience Subfields",
-                 fontsize=14, fontweight="bold")
-    ax.legend(fontsize=11, loc="upper left"); ax.set_aspect("equal"); ax.grid(alpha=0.3)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['left'].set_position(('outward', 6))
+    ax.spines['bottom'].set_position(('outward', 6))
+    ax.set_xlabel("Cumulative Share of Task Types (frequency sorted)")
+    ax.set_ylabel("Cumulative Share of Publications")
+    # ax.set_title("Lorenz Curves of Task Usage\nacross Neuroscience Subfields",
+                #  fontsize=14, fontweight="bold")
+    ax.set_xlim(0, 1); ax.set_ylim(0, 1)
+    ax.legend(fontsize=14, loc="upper left"); ax.set_aspect("equal");
+    # ax.grid(alpha=0.3)
     plt.tight_layout(); plt.savefig(path, dpi=_DPI, bbox_inches="tight"); plt.close()
     print(f"  Saved: {path}")
 
@@ -273,10 +333,15 @@ def main():
                              "figure 08 (LLM rank vs PubMed rank validation)")
     parser.add_argument("--out",    default="figures")
     parser.add_argument("--fmt",    default="png", choices=["png","pdf","svg"])
-    parser.add_argument("--dpi",    type=int, default=200)
+    parser.add_argument("--dpi",    type=int, default=None,
+                        help="Override savefig DPI (default: uses rcParams savefig.dpi=400)")
+    parser.add_argument("--top-n",  type=int, default=10,
+                        help="Number of top tasks shown in each subfield bar/pie plot (default: 10)")
     args = parser.parse_args()
 
-    _DPI = args.dpi
+    if args.dpi is not None:
+        _DPI = args.dpi
+        mpl.rcParams['savefig.dpi'] = args.dpi
     out_dir = Path(args.out); out_dir.mkdir(exist_ok=True)
 
     raw = json.loads(Path(args.data).read_text())
@@ -324,7 +389,7 @@ def main():
     for sf in valid:
         plot_subfield(dict(data[sf]), sf,
                       f(labels.get(sf, sf.lower().replace(" ","_"))),
-                      SUBFIELD_COLORS.get(sf,"#607D8B"), union=unions[sf])
+                      SUBFIELD_COLORS.get(sf,"#607D8B"), union=unions[sf], top_n=args.top_n)
     plot_summary(stats, valid, f("01_summary_concentration"))
     plot_lorenz(data, valid, f("02_lorenz_curves"))
     plot_cumulative(data, unions, valid, f("03_cumulative_concentration"))
