@@ -136,7 +136,7 @@ def plot_coverage(subfields, totals, unions, path):
     unnamed = [max(totals[s]-unions[s], 0) for s in subfields]
     b1 = a1.bar(x, named,   color=colors, alpha=0.9, label="Named-task studies (UNION)")
     a1.bar(x, unnamed, bottom=named, color="#ddd", alpha=0.8, label="Other / unnamed")
-    a1.set_xticks(x); a1.set_xticklabels(subfields, fontsize=11)
+    a1.set_xticks(x); a1.set_xticklabels(subfields, fontsize=11, rotation=20, ha='right')
     a1.set_ylabel("PubMed publications"); a1.legend(fontsize=10)
     # a1.set_title("How many subfield studies name\na tracked task?", fontsize=13, fontweight="bold")
     for bar, n, u in zip(b1, named, unnamed):
@@ -144,6 +144,7 @@ def plot_coverage(subfields, totals, unions, path):
                 ha="center", va="center", fontsize=9, color="white", fontweight="bold")
     pcts = [unions[s]/totals[s]*100 if totals[s] else 0 for s in subfields]
     bars = a2.bar(subfields, pcts, color=colors, alpha=0.85)
+    a2.set_xticks(x); a2.set_xticklabels(subfields, fontsize=11, rotation=20, ha='right')
     a2.set_ylabel("Coverage (%)"); a2.set_ylim(0, max(pcts)*1.35)
     # a2.set_title("Named-task studies as\n% of empirical subfield total", fontsize=13, fontweight="bold")
     for b, p in zip(bars, pcts):
