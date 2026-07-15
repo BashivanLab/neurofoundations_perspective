@@ -28,6 +28,18 @@ PubMed (empirical filter)
 5_plot_results.py         →  figures/
 ```
 
+## System requirements
+
+- OS tested: Ubuntu 22.04 LTS (vLLM / GPU backend); macOS 14, Apple
+  Silicon (transformers + MPS backend, used for the quick demo below)
+- Python: 3.10
+- Dependencies and versions: see `requirements.txt` (matplotlib>=3.5,
+  numpy>=1.21, scipy>=1.7, torch>=2.0, transformers>=4.40, accelerate>=0.26)
+- Non-standard hardware: an NVIDIA GPU is required for step 2 at full
+  corpus scale (see the VRAM table below). Step 2 also runs, slowly, on
+  CPU or Apple Silicon (MPS) for the small demo dataset described below.
+  Steps 1, 3, 4 and 5 require no GPU.
+
 ## Setup
 
 ```bash
@@ -35,6 +47,11 @@ pip install -r requirements.txt
 # Optional 4-bit quantization (saves ~50% GPU memory):
 pip install bitsandbytes
 ```
+
+**Typical install time:** under 5 minutes on a normal desktop computer
+(excludes downloading model weights — see the demo below for a
+CPU/MPS-only path that avoids a large download).
+
 
 ## Step 1 — Download abstracts
 
@@ -173,21 +190,40 @@ Output figures:
 | `04–07_*.png` | Per-subfield bar + pie charts |
 | `08_llm_vs_pubmed.png` | Scatter: LLM rank vs PubMed rank (validation) |
 
-## What makes this defensible to reviewers
+## Quick demo (no PubMed access or GPU required)
 
-1. **No pre-specified paradigm list** — task names are extracted from the
-   data itself by the LLM; analyst judgment is removed from paradigm selection.
+A 10-record synthetic demo dataset is provided at
+`demo/sample_abstracts.jsonl` (clearly marked as synthetic, not real
+PubMed records) so reviewers can exercise the full pipeline without
+querying PubMed or provisioning a GPU.
 
-2. **Empirical-article filter** — TOTAL denominator excludes reviews,
-   meta-analyses, editorials, and papers without participant/animal mentions,
-   so it represents empirical original research only.
+```bash
+# Step 2 — extract task names (small model, CPU)
+python 2_extract_tasks_llm.py --in-dir demo --out-dir demo/extracted \
+    --model Qwen/Qwen3.5-9B --device cpu --batch-size 1
+# or, on Apple Silicon:
+python 2_extract_tasks_llm.py --in-dir demo --out-dir demo/extracted \
+    --model Qwen/Qwen3.5-9B --device mps --batch-size 1
 
-3. **Two-level framing**:
-   - Coverage rate (UNION/TOTAL): what fraction of empirical papers name
-     a specific paradigm — itself a finding about field transparency.
-   - Concentration (within UNION): how skewed the distribution is among
-     papers that do name a paradigm.
+# Step 3 — aggregate the extracted task names
+python 3_aggregate_tasks.py --in-dir demo/extracted --abstracts-dir demo \
+    --out-dir demo --min-count 1
 
-4. **Validation figure** (08_llm_vs_pubmed.png): shows that LLM mention
-   rank correlates with PubMed search count rank, validating that both
-   approaches converge on the same paradigm hierarchy.
+# Step 5 — plot results
+python 5_plot_results.py --data demo/task_frequencies.json \
+    --out demo/figures --fmt png --dpi 150
+```
+
+**Expected output:** `demo/extracted/sample_abstracts.jsonl` (one line
+per demo abstract, each listing the named paradigm(s) found — e.g.
+"n-back task", "morris water maze", "random dot motion", "visual search
+task"), `demo/task_frequencies.json` / `.csv`, and summary figures in
+`demo/figures/`. Because the demo file mixes all four subfields into one
+sample rather than four separate per-subfield files, the demo treats it
+as a single pseudo-subfield ("Sample Abstracts") rather than reproducing
+the four-subfield breakdown in the paper — it is meant to demonstrate
+that the pipeline runs end-to-end, not to reproduce Fig. S1 itself.
+
+**Expected run time for demo:** under 2 minutes on CPU (10 abstracts,
+`--device cpu --batch-size 1`); under 30 seconds on a single GPU or with
+Apple Silicon MPS.
